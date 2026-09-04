@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "842629486321",
+    "project_id": "cooperative-services",
+    "storage_bucket": "cooperative-services.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842629486321:android:d7c678b7754a33c0417b50",
+        "android_client_info": {
+          "package_name": "com.example.cooperative_gig_services"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMWMqX-qKuN5GjG7p_actvOUpew5bIL20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
