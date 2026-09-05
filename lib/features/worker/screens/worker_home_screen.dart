@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/localization/app_localization.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_typography.dart';
 import '../../../shared/data/repository.dart';
 import '../../../shared/models/booking_model.dart';
 import '../../../shared/widgets/status_badge.dart';
-import 'worker_welfare_screen.dart';
 
 class WorkerHomeScreen extends ConsumerWidget {
   const WorkerHomeScreen({super.key});
@@ -17,20 +14,29 @@ class WorkerHomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(platformRepositoryProvider);
     final user = repo.currentUser;
-    final worker = repo.allWorkers.firstWhere(
-      (w) => w.uid == user.uid,
-      orElse: () => repo.allWorkers.first,
-    );
+    final worker = repo.getWorkerForUser(user);
     final coop = repo.allCooperatives.firstWhere(
       (c) => c.id == worker.cooperativeId,
       orElse: () => repo.allCooperatives.first,
     );
     final bookings =
         repo.allBookings.where((b) => b.workerId == worker.uid).toList();
-    final requestedBookings =
-        bookings.where((b) => b.status == BookingStatus.requested).toList();
+
+    final requestedBookings = bookings
+        .where((b) =>
+            b.status == BookingStatus.bookingCreated ||
+            b.status == BookingStatus.workerSearching ||
+            b.status == BookingStatus.requested)
+        .toList();
+
     final activeBookings = bookings
         .where((b) =>
+            b.status == BookingStatus.workerAccepted ||
+            b.status == BookingStatus.workerOnTheWay ||
+            b.status == BookingStatus.workerArrived ||
+            b.status == BookingStatus.workStarted ||
+            b.status == BookingStatus.workInProgress ||
+            b.status == BookingStatus.workCompleted ||
             b.status == BookingStatus.accepted ||
             b.status == BookingStatus.onTheWay ||
             b.status == BookingStatus.arrived ||
@@ -106,26 +112,33 @@ class WorkerHomeScreen extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Good Day, ${worker.name.split(' ').first}! ⚡',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.white,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Good Day, ${worker.name.split(' ').first}! ⚡',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.white,
+                              ),
                             ),
-                          ),
-                          const Text(
-                            'Anna Nagar Co-op • Certified Member',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.celadon,
+                            Text(
+                              '${worker.cooperativeName} • Guild Member',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.celadon,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
@@ -148,15 +161,25 @@ class WorkerHomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _dashMetric('Today\'s Payout',
-                          '₹${worker.earnings.today.toInt()}'),
-                      _dashMetric('This Week',
-                          '₹${worker.earnings.week.toInt()}'),
-                      _dashMetric('Rating', '★ ${worker.rating}'),
-                      _dashMetric(
-                          'Jobs Done', '${worker.completedJobsCount}'),
+                      Expanded(
+                        child: _dashMetric('Earnings',
+                            '₹${worker.earnings.month.toInt()}'),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _dashMetric('Jobs Done',
+                            '${worker.completedJobsCount}'),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _dashMetric('Rating', '★ ${worker.rating}'),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _dashMetric(
+                            'Experience', '${worker.experienceYears} yrs'),
+                      ),
                     ],
                   ),
                 ],
@@ -164,102 +187,9 @@ class WorkerHomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
-            // Incoming Request Alert Banner (if any)
+            // Incoming Request Alert Banner
             if (requestedBookings.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.pineTeal,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.evergreen.withOpacity(0.2),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: AppColors.amberWarning,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'NEW SERVICE DISPATCH REQUEST',
-                          style: TextStyle(
-                            color: AppColors.celadon,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      requestedBookings.first.serviceSubtype,
-                      style: const TextStyle(
-                        color: AppColors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Client: ${requestedBookings.first.customerName} • ${requestedBookings.first.location.address}',
-                      style: const TextStyle(
-                        color: AppColors.frostedMint,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {
-                              repo.updateBookingStatus(
-                                requestedBookings.first.id,
-                                BookingStatus.cancelled,
-                              );
-                            },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.white,
-                              side: const BorderSide(color: AppColors.celadon),
-                            ),
-                            child: const Text('Decline'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              repo.updateBookingStatus(
-                                requestedBookings.first.id,
-                                BookingStatus.accepted,
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.seaGreen,
-                              foregroundColor: AppColors.white,
-                            ),
-                            child: Text('Accept Job (₹${requestedBookings.first.finalPrice.toInt()})'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              ...requestedBookings.map((req) => _buildIncomingRequestCard(context, ref, req)),
               const SizedBox(height: 16),
             ],
 
@@ -279,7 +209,9 @@ class WorkerHomeScreen extends ConsumerWidget {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundImage: NetworkImage(coop.logoUrl),
+                      backgroundImage: NetworkImage(coop.logoUrl.isNotEmpty
+                          ? coop.logoUrl
+                          : 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150'),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -313,7 +245,7 @@ class WorkerHomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
-            // Active / Ongoing Jobs
+            // Active / Ongoing Jobs Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -352,14 +284,14 @@ class WorkerHomeScreen extends ConsumerWidget {
                         size: 36, color: AppColors.seaGreen),
                     SizedBox(height: 8),
                     Text(
-                      'No active jobs right now',
+                      'No active jobs in queue',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: AppColors.evergreen,
                       ),
                     ),
                     Text(
-                      'Turn your switch ONLINE above to receive neighborhood dispatch requests.',
+                      'Keep your switch ONLINE above to receive neighborhood dispatch requests.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11,
@@ -370,11 +302,12 @@ class WorkerHomeScreen extends ConsumerWidget {
                 ),
               )
             else
-              ...activeBookings.map((b) => _buildActiveJobCard(context, ref, b)),
+              ...activeBookings
+                  .map((b) => _buildActiveJobCard(context, ref, b)),
 
             const SizedBox(height: 20),
 
-            // Fair Co-op Wage Notice
+            // Fair Co-op Wage Policy Notice
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -400,7 +333,7 @@ class WorkerHomeScreen extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          'You receive ~85% directly on job completion. 12% is held in your health fund & tooling dividends.',
+                          'You receive 85% directly upon customer confirmation. 12% is deposited into your health fund & tooling dividends.',
                           style: TextStyle(
                             fontSize: 11,
                             color: AppColors.evergreen,
@@ -425,22 +358,183 @@ class WorkerHomeScreen extends ConsumerWidget {
       children: [
         Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 10, color: AppColors.celadon),
         ),
-        Text(
-          val,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: AppColors.white,
+        const SizedBox(height: 2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            val,
+            maxLines: 1,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.white,
+            ),
           ),
         ),
       ],
     );
   }
 
+  Widget _buildIncomingRequestCard(
+      BuildContext context, WidgetRef ref, Booking req) {
+    final repo = ref.read(platformRepositoryProvider);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.pineTeal,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.evergreen.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: AppColors.amberWarning,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'NEW WORK DISPATCH REQUEST',
+                    style: TextStyle(
+                      color: AppColors.celadon,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                '#${req.id}',
+                style: const TextStyle(
+                  color: AppColors.frostedMint,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            req.serviceSubtype,
+            style: const TextStyle(
+              color: AppColors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          if (req.workDescription.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Problem: "${req.workDescription}"',
+              style: const TextStyle(
+                color: AppColors.frostedMint,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            'Client: ${req.customerName} (${req.customerPhone})',
+            style: const TextStyle(
+              color: AppColors.celadon,
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            'Location: ${req.location.address}',
+            style: const TextStyle(
+              color: AppColors.celadon,
+              fontSize: 11,
+            ),
+          ),
+          if (req.requestedDateText.isNotEmpty ||
+              req.requestedTimeText.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Requested Time: ${req.requestedDateText} • ${req.requestedTimeText}',
+              style: const TextStyle(
+                color: AppColors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    repo.declineBooking(req.id,
+                        reason: 'Worker busy with existing service schedule');
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.white,
+                    side: const BorderSide(color: AppColors.celadon),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: const Text('Deny Request'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final updated = repo.updateBookingStatus(
+                      req.id,
+                      BookingStatus.workerAccepted,
+                    );
+                    context.push(AppRoutes.workerJobDetail, extra: updated);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.seaGreen,
+                    foregroundColor: AppColors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: Text(
+                    'Accept Work (₹${req.pricing.workerDirectEarnings.toInt()} net)',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActiveJobCard(
       BuildContext context, WidgetRef ref, Booking booking) {
+    final isAwaitingConfirmation =
+        booking.status == BookingStatus.workCompleted ||
+            booking.status == BookingStatus.completed;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -456,7 +550,7 @@ class WorkerHomeScreen extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                booking.id,
+                '#${booking.id}',
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -465,7 +559,9 @@ class WorkerHomeScreen extends ConsumerWidget {
               ),
               StatusBadge(
                 label: booking.status.label,
-                status: BadgeStatus.onTheWay,
+                status: isAwaitingConfirmation
+                    ? BadgeStatus.completed
+                    : BadgeStatus.onTheWay,
               ),
             ],
           ),
@@ -478,10 +574,23 @@ class WorkerHomeScreen extends ConsumerWidget {
               color: AppColors.evergreen,
             ),
           ),
+          if (booking.workDescription.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              booking.workDescription,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
           Text(
             'Client: ${booking.customerName} • ${booking.location.address}',
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: AppColors.textSecondary,
             ),
           ),
@@ -497,19 +606,43 @@ class WorkerHomeScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    _advanceJobStatus(ref, booking);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.seaGreen,
-                    foregroundColor: AppColors.white,
+              if (!isAwaitingConfirmation)
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      _advanceJobStatus(ref, booking);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.seaGreen,
+                      foregroundColor: AppColors.white,
+                    ),
+                    child: Text(
+                      booking.status.nextWorkerActionLabel,
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  child: Text(booking.status.nextWorkerActionLabel,
-                      style: const TextStyle(fontSize: 12)),
+                )
+              else
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.frostedMint,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Waiting for Customer',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.seaGreen,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -520,20 +653,24 @@ class WorkerHomeScreen extends ConsumerWidget {
   void _advanceJobStatus(WidgetRef ref, Booking b) {
     final repo = ref.read(platformRepositoryProvider);
     switch (b.status) {
-      case BookingStatus.requested:
-        repo.updateBookingStatus(b.id, BookingStatus.accepted);
+      case BookingStatus.bookingCreated:
+      case BookingStatus.workerSearching:
+        repo.updateBookingStatus(b.id, BookingStatus.workerAccepted);
         break;
-      case BookingStatus.accepted:
-        repo.updateBookingStatus(b.id, BookingStatus.onTheWay);
+      case BookingStatus.workerAccepted:
+        repo.updateBookingStatus(b.id, BookingStatus.workerOnTheWay);
         break;
-      case BookingStatus.onTheWay:
-        repo.updateBookingStatus(b.id, BookingStatus.arrived);
+      case BookingStatus.workerOnTheWay:
+        repo.updateBookingStatus(b.id, BookingStatus.workerArrived);
         break;
-      case BookingStatus.arrived:
-        repo.updateBookingStatus(b.id, BookingStatus.inProgress);
+      case BookingStatus.workerArrived:
+        repo.updateBookingStatus(b.id, BookingStatus.workStarted);
         break;
-      case BookingStatus.inProgress:
-        repo.updateBookingStatus(b.id, BookingStatus.completed);
+      case BookingStatus.workStarted:
+        repo.updateBookingStatus(b.id, BookingStatus.workInProgress);
+        break;
+      case BookingStatus.workInProgress:
+        repo.updateBookingStatus(b.id, BookingStatus.workCompleted);
         break;
       default:
         break;

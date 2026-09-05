@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../shared/data/repository.dart';
 import '../../shared/models/user_model.dart';
+import '../../shared/models/worker_model.dart';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -58,6 +59,24 @@ class FirebaseAuthService {
             );
             repo.setCurrentUser(user);
             repo.storeUserPassword(cleanEmail, cleanPass);
+
+            // If Worker, fetch and load worker profile document from Firestore
+            if (user.role == UserRole.worker) {
+              try {
+                final wDoc = await _firestore
+                    .collection('workers')
+                    .doc(firebaseUser.uid)
+                    .get();
+                if (wDoc.exists && wDoc.data() != null) {
+                  final wData = Map<String, dynamic>.from(wDoc.data()!);
+                  wData['uid'] = firebaseUser.uid;
+                  repo.addOrUpdateWorker(WorkerProfile.fromMap(wData));
+                }
+              } catch (wErr) {
+                debugPrint('Firestore worker fetch note: $wErr');
+              }
+            }
+
             return user;
           }
         } catch (firestoreError) {
@@ -164,6 +183,40 @@ class FirebaseAuthService {
         } catch (firestoreErr) {
           debugPrint('Firestore write note: $firestoreErr');
         }
+
+        // If Worker, also store WorkerProfile document in Cloud Firestore
+        if (role == UserRole.worker) {
+          try {
+            final coop = repo.allCooperatives.firstWhere(
+              (c) => c.id == cooperativeId,
+              orElse: () => repo.allCooperatives.first,
+            );
+            final initialWorker = WorkerProfile(
+              uid: assignedUid,
+              name: name,
+              photoUrl:
+                  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+              cooperativeId: coop.id,
+              cooperativeName: coop.name,
+              primaryCategory: primaryCategory ?? 'Electrician',
+              skills: skills ??
+                  [primaryCategory ?? 'Electrician', 'General Maintenance & Diagnostics'],
+              experienceYears: experienceYears ?? 3,
+              online: true,
+              hourlyRate: 350.0,
+              serviceAreas: [addressOrRegion ?? 'Anna Nagar', 'Chennai'],
+              distanceDisplay: '1.2 km away',
+              availabilityDisplay: 'Available now',
+            );
+            await _firestore
+                .collection('workers')
+                .doc(assignedUid)
+                .set(initialWorker.toMap(), SetOptions(merge: true));
+            debugPrint('Worker profile document saved to Cloud Firestore for $assignedUid');
+          } catch (wErr) {
+            debugPrint('Firestore worker document write error: $wErr');
+          }
+        }
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase Auth register error: ${e.code} - ${e.message}');
@@ -180,8 +233,9 @@ class FirebaseAuthService {
       debugPrint('Firebase registration platform note: $e');
     }
 
-    // Sync into Repository State & Return
+    // Sync into Repository State & Return with exact Firebase Auth UID
     return repo.registerUnifiedUser(
+      uid: assignedUid,
       name: name,
       email: cleanEmail,
       phone: phone,

@@ -86,20 +86,14 @@ class SuperDashboardScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Divider(color: AppColors.pineTeal),
                   const SizedBox(height: 8),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Platform Extraction: 0% • 100% Flow to Workers & Guilds',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.frostedMint,
-                        ),
-                      ),
-                    ],
+                  const Text(
+                    'Platform Extraction: 0% • 100% Flow to Workers & Guilds',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.frostedMint,
+                    ),
                   ),
                 ],
               ),
@@ -227,7 +221,7 @@ class SuperDashboardScreen extends ConsumerWidget {
 
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -238,12 +232,21 @@ class SuperDashboardScreen extends ConsumerWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
+              const SizedBox(width: 4),
               Icon(icon, size: 18, color: color),
             ],
           ),

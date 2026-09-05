@@ -68,16 +68,20 @@ class BookingFunnelChart extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        stage.label,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.evergreen,
+                      Expanded(
+                        child: Text(
+                          stage.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.evergreen,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '${stage.count} (${(stage.percentage * 100).toInt()}%)',
                         style: TextStyle(

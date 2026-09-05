@@ -404,6 +404,13 @@ class _VerificationPendingScreenState
 
                     // Action Buttons
                     CustomButton(
+                      text: 'Enter Worker Dashboard →',
+                      type: ButtonType.primary,
+                      icon: Icons.dashboard,
+                      onPressed: () => context.go(AppRoutes.workerHome),
+                    ),
+                    const SizedBox(height: 10),
+                    CustomButton(
                       text: 'Contact Co-op Admin Support',
                       type: ButtonType.secondary,
                       icon: Icons.support_agent,

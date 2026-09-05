@@ -27,10 +27,7 @@ class _WorkerScheduleScreenState extends ConsumerState<WorkerScheduleScreen> {
   Widget build(BuildContext context) {
     final repo = ref.watch(platformRepositoryProvider);
     final user = repo.currentUser;
-    final worker = repo.allWorkers.firstWhere(
-      (w) => w.uid == user.uid,
-      orElse: () => repo.allWorkers.first,
-    );
+    final worker = repo.getWorkerForUser(user);
 
     return Scaffold(
       backgroundColor: const Color(0xFFE7FFF3),

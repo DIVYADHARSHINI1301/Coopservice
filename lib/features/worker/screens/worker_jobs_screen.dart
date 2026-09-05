@@ -34,26 +34,36 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
   Widget build(BuildContext context) {
     final repo = ref.watch(platformRepositoryProvider);
     final user = repo.currentUser;
-    final worker = repo.allWorkers.firstWhere(
-      (w) => w.uid == user.uid,
-      orElse: () => repo.allWorkers.first,
-    );
+    final worker = repo.getWorkerForUser(user);
     final bookings =
         repo.allBookings.where((b) => b.workerId == worker.uid).toList();
 
     final activeJobs = bookings
         .where((b) =>
+            b.status == BookingStatus.workerAccepted ||
+            b.status == BookingStatus.workerOnTheWay ||
+            b.status == BookingStatus.workerArrived ||
+            b.status == BookingStatus.workStarted ||
+            b.status == BookingStatus.workInProgress ||
+            b.status == BookingStatus.workCompleted ||
             b.status == BookingStatus.accepted ||
             b.status == BookingStatus.onTheWay ||
             b.status == BookingStatus.arrived ||
             b.status == BookingStatus.inProgress)
         .toList();
 
-    final completedJobs =
-        bookings.where((b) => b.status == BookingStatus.completed).toList();
+    final completedJobs = bookings
+        .where((b) =>
+            b.status == BookingStatus.customerConfirmed ||
+            b.status == BookingStatus.closed ||
+            b.status == BookingStatus.completed)
+        .toList();
 
-    final cancelledJobs =
-        bookings.where((b) => b.status == BookingStatus.cancelled).toList();
+    final cancelledJobs = bookings
+        .where((b) =>
+            b.status == BookingStatus.cancelled ||
+            b.status == BookingStatus.workerDeclined)
+        .toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFE7FFF3),
@@ -81,20 +91,20 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildJobsList(activeJobs),
-          _buildJobsList(completedJobs),
-          _buildJobsList(cancelledJobs),
+          _buildJobsList(activeJobs, 'No active jobs right now'),
+          _buildJobsList(completedJobs, 'No completed jobs yet'),
+          _buildJobsList(cancelledJobs, 'No cancelled jobs'),
         ],
       ),
     );
   }
 
-  Widget _buildJobsList(List<Booking> jobs) {
+  Widget _buildJobsList(List<Booking> jobs, String emptyText) {
     if (jobs.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No jobs in this category',
-          style: TextStyle(color: AppColors.textSecondary),
+          emptyText,
+          style: const TextStyle(color: AppColors.textSecondary),
         ),
       );
     }
@@ -105,6 +115,10 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final job = jobs[index];
+        final isCompleted = job.status == BookingStatus.closed ||
+            job.status == BookingStatus.customerConfirmed ||
+            job.status == BookingStatus.completed;
+
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -134,9 +148,12 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
                   ),
                   StatusBadge(
                     label: job.status.label,
-                    status: job.status == BookingStatus.completed
+                    status: isCompleted
                         ? BadgeStatus.completed
-                        : BadgeStatus.onTheWay,
+                        : (job.status == BookingStatus.cancelled ||
+                                job.status == BookingStatus.workerDeclined
+                            ? BadgeStatus.rejected
+                            : BadgeStatus.onTheWay),
                   ),
                 ],
               ),
@@ -146,6 +163,19 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.bold),
               ),
+              if (job.workDescription.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  job.workDescription,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 4),
               Text(
                 'Customer: ${job.customerName} • ${job.location.address}',
@@ -157,7 +187,7 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '₹${job.finalPrice.toInt()} (${job.paymentStatus.toUpperCase()})',
+                    '₹${job.pricing.workerDirectEarnings.toInt()} net (${job.paymentStatus.toUpperCase()})',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -174,7 +204,7 @@ class _WorkerJobsScreenState extends ConsumerState<WorkerJobsScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 6),
                     ),
-                    child: const Text('Manage Lifecycle'),
+                    child: const Text('Job Console'),
                   ),
                 ],
               ),

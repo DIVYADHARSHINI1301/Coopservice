@@ -317,4 +317,69 @@ class WorkerProfile {
       bio: bio ?? this.bio,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'uid': uid,
+      'name': name,
+      'photoUrl': photoUrl,
+      'cooperativeId': cooperativeId,
+      'cooperativeName': cooperativeName,
+      'primaryCategory': primaryCategory,
+      'skills': skills,
+      'serviceAreas': serviceAreas,
+      'experienceYears': experienceYears,
+      'completedJobsCount': completedJobsCount,
+      'badges': badges,
+      'rating': rating,
+      'ratingCount': ratingCount,
+      'serviceRadiusKm': serviceRadiusKm,
+      'online': online,
+      'lat': lat,
+      'lng': lng,
+      'hourlyRate': hourlyRate,
+      'distanceDisplay': distanceDisplay,
+      'availabilityDisplay': availabilityDisplay,
+      'bio': bio,
+    };
+  }
+
+  factory WorkerProfile.fromMap(Map<String, dynamic> map) {
+    return WorkerProfile(
+      uid: map['uid'] as String? ?? '',
+      name: map['name'] as String? ?? 'Specialist',
+      photoUrl: map['photoUrl'] as String? ??
+          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      cooperativeId: map['cooperativeId'] as String? ?? 'coop_anna_nagar',
+      cooperativeName: map['cooperativeName'] as String? ??
+          'Anna Nagar Electrical & Trades Co-op',
+      primaryCategory: map['primaryCategory'] as String? ?? 'Electrician',
+      skills: (map['skills'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['General Diagnostics', 'Installation & Repair'],
+      serviceAreas: (map['serviceAreas'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['Anna Nagar', 'Chennai'],
+      experienceYears: (map['experienceYears'] as num?)?.toInt() ?? 3,
+      completedJobsCount: (map['completedJobsCount'] as num?)?.toInt() ?? 0,
+      badges: (map['badges'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['Identity Verified', 'Skill Verified', 'Co-op Member'],
+      rating: (map['rating'] as num?)?.toDouble() ?? 5.0,
+      ratingCount: (map['ratingCount'] as num?)?.toInt() ?? 1,
+      serviceRadiusKm: (map['serviceRadiusKm'] as num?)?.toDouble() ?? 10.0,
+      online: map['online'] as bool? ?? true,
+      lat: (map['lat'] as num?)?.toDouble() ?? 13.0827,
+      lng: (map['lng'] as num?)?.toDouble() ?? 80.2707,
+      hourlyRate: (map['hourlyRate'] as num?)?.toDouble() ?? 350.0,
+      distanceDisplay: map['distanceDisplay'] as String? ?? '1.2 km away',
+      availabilityDisplay:
+          map['availabilityDisplay'] as String? ?? 'Available now',
+      bio: map['bio'] as String? ??
+          'Experienced technician and proud cooperative owner committed to honest work, certified safety, and transparent community rates.',
+    );
+  }
 }

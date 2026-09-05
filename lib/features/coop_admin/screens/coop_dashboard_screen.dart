@@ -74,6 +74,8 @@ class CoopDashboardScreen extends ConsumerWidget {
                         children: [
                           Text(
                             '${pendingUsers.length} Worker Application(s) Pending Review',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -82,6 +84,8 @@ class CoopDashboardScreen extends ConsumerWidget {
                           ),
                           const Text(
                             'Candidate: Karthik Selvam (#CS-84920)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -194,7 +198,7 @@ class CoopDashboardScreen extends ConsumerWidget {
 
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -211,15 +215,21 @@ class CoopDashboardScreen extends ConsumerWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
+              const SizedBox(width: 4),
               Icon(icon, size: 18, color: color),
             ],
           ),

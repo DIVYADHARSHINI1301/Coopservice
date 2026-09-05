@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
@@ -10,6 +11,9 @@ import '../models/review_model.dart';
 import 'mock_database.dart';
 
 class PlatformRepository with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _isSyncingWithFirestore = false;
+
   final List<AppUser> _users = List.from(MockDatabase.users);
   final List<CustomerProfile> _customers = List.from(MockDatabase.customers);
   final List<WorkerProfile> _workers = List.from(MockDatabase.workers);
@@ -23,6 +27,152 @@ class PlatformRepository with ChangeNotifier {
   final List<AuditLog> _auditLogs = List.from(MockDatabase.auditLogs);
   final ForecastData _forecast = MockDatabase.aiForecast;
 
+  PlatformRepository() {
+    _initFirestoreListeners();
+    fetchFirestoreData();
+  }
+
+  void _initFirestoreListeners() {
+    if (_isSyncingWithFirestore) return;
+    _isSyncingWithFirestore = true;
+
+    // 1. Real-time Worker Sync from Firestore
+    try {
+      _firestore.collection('workers').snapshots().listen((snapshot) {
+        bool changed = false;
+        for (final doc in snapshot.docs) {
+          try {
+            final data = Map<String, dynamic>.from(doc.data());
+            data['uid'] = doc.id;
+            final worker = WorkerProfile.fromMap(data);
+            _syncWorker(worker);
+            changed = true;
+          } catch (e) {
+            debugPrint('Worker doc parsing error: $e');
+          }
+        }
+        if (changed) notifyListeners();
+      }, onError: (e) {
+        debugPrint('Firestore workers sync error: $e');
+      });
+    } catch (e) {
+      debugPrint('Firestore workers listener init: $e');
+    }
+
+    // 2. Real-time Booking Sync from Firestore
+    try {
+      _firestore.collection('bookings').snapshots().listen((snapshot) {
+        bool changed = false;
+        for (final doc in snapshot.docs) {
+          try {
+            final data = Map<String, dynamic>.from(doc.data());
+            data['id'] = doc.id;
+            final booking = Booking.fromMap(data);
+            final index = _bookings.indexWhere((b) => b.id == booking.id);
+            if (index >= 0) {
+              _bookings[index] = booking;
+            } else {
+              _bookings.insert(0, booking);
+            }
+            changed = true;
+          } catch (e) {
+            debugPrint('Booking doc parsing error: $e');
+          }
+        }
+        if (changed) notifyListeners();
+      }, onError: (e) {
+        debugPrint('Firestore bookings sync error: $e');
+      });
+    } catch (e) {
+      debugPrint('Firestore bookings listener init: $e');
+    }
+  }
+
+  void _syncWorker(WorkerProfile worker) {
+    final index = _workers.indexWhere((w) => w.uid == worker.uid);
+    if (index >= 0) {
+      _workers[index] = worker;
+    } else {
+      _workers.add(worker);
+    }
+    final mIndex = MockDatabase.workers.indexWhere((w) => w.uid == worker.uid);
+    if (mIndex >= 0) {
+      MockDatabase.workers[mIndex] = worker;
+    } else {
+      MockDatabase.workers.add(worker);
+    }
+  }
+
+  Future<void> fetchFirestoreData() async {
+    try {
+      final workerSnap = await _firestore.collection('workers').get();
+      bool changed = false;
+      for (final doc in workerSnap.docs) {
+        try {
+          final data = Map<String, dynamic>.from(doc.data());
+          data['uid'] = doc.id;
+          final worker = WorkerProfile.fromMap(data);
+          _syncWorker(worker);
+          changed = true;
+        } catch (e) {
+          debugPrint('Worker doc fetch error: $e');
+        }
+      }
+
+      final bookingSnap = await _firestore.collection('bookings').get();
+      for (final doc in bookingSnap.docs) {
+        try {
+          final data = Map<String, dynamic>.from(doc.data());
+          data['id'] = doc.id;
+          final booking = Booking.fromMap(data);
+          final index = _bookings.indexWhere((b) => b.id == booking.id);
+          if (index >= 0) {
+            _bookings[index] = booking;
+          } else {
+            _bookings.insert(0, booking);
+          }
+          changed = true;
+        } catch (e) {
+          debugPrint('Booking doc fetch error: $e');
+        }
+      }
+
+      if (changed) notifyListeners();
+    } catch (e) {
+      debugPrint('Initial Firestore eager fetch error: $e');
+    }
+  }
+
+  void addOrUpdateWorker(WorkerProfile worker) {
+    _syncWorker(worker);
+    _saveWorkerToFirestore(worker);
+    notifyListeners();
+  }
+
+  Future<void> _saveWorkerToFirestore(WorkerProfile worker) async {
+    try {
+      await _firestore
+          .collection('workers')
+          .doc(worker.uid)
+          .set(worker.toMap(), SetOptions(merge: true));
+      debugPrint('Worker synced to Firestore: ${worker.name} (${worker.uid})');
+    } catch (e) {
+      debugPrint('Worker Firestore save error: $e');
+    }
+  }
+
+  Future<void> _saveBookingToFirestore(Booking booking) async {
+    try {
+      await _firestore
+          .collection('bookings')
+          .doc(booking.id)
+          .set(booking.toMap(), SetOptions(merge: true));
+      debugPrint('Booking synced to Firestore: ${booking.id}');
+    } catch (e) {
+      debugPrint('Booking Firestore save error: $e');
+    }
+  }
+
   // Active Session
   bool _isLoggedIn = false;
   AppUser _currentUser = MockDatabase.users[0]; // defaults to Divya (Customer)
@@ -32,6 +182,8 @@ class PlatformRepository with ChangeNotifier {
   List<AppUser> get allUsers => List.unmodifiable(_users);
   List<CustomerProfile> get allCustomers => List.unmodifiable(_customers);
   List<WorkerProfile> get allWorkers => List.unmodifiable(_workers);
+  List<WorkerProfile> get onlineWorkers =>
+      List.unmodifiable(_workers.where((w) => w.online));
   List<Cooperative> get allCooperatives => List.unmodifiable(_cooperatives);
   List<ServiceItem> get allServices => List.unmodifiable(_services);
   List<Booking> get allBookings => List.unmodifiable(_bookings);
@@ -45,7 +197,62 @@ class PlatformRepository with ChangeNotifier {
   CustomerProfile get currentCustomerProfile {
     return _customers.firstWhere(
       (c) => c.uid == _currentUser.uid,
-      orElse: () => _customers.first,
+      orElse: () => _customers.isNotEmpty
+          ? _customers.first
+          : CustomerProfile(
+              uid: _currentUser.uid,
+              name: _currentUser.name,
+              email: _currentUser.email,
+              phone: _currentUser.phone,
+            ),
+    );
+  }
+
+  WorkerProfile getWorkerForUser(AppUser user) {
+    final match = _workers.where((w) => w.uid == user.uid);
+    if (match.isNotEmpty) {
+      return match.first;
+    }
+    if (_workers.isNotEmpty) {
+      return _workers.first;
+    }
+    return WorkerProfile(
+      uid: user.uid,
+      name: user.name.isNotEmpty ? user.name : 'Co-op Specialist',
+      photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      cooperativeId: user.cooperativeId ?? (_cooperatives.isNotEmpty ? _cooperatives.first.id : 'coop_anna_nagar'),
+      cooperativeName: user.cooperativeName ?? (_cooperatives.isNotEmpty ? _cooperatives.first.name : 'Anna Nagar Local Cluster'),
+      primaryCategory: 'Electrician',
+      skills: const ['General Diagnostics', 'Installation & Repair', 'Emergency Service'],
+      serviceAreas: const ['Anna Nagar', 'Chennai'],
+      experienceYears: 4,
+      hourlyRate: 350.0,
+      online: true,
+      distanceDisplay: '1.2 km away',
+      availabilityDisplay: 'Available now',
+    );
+  }
+
+  WorkerProfile getSafeWorkerById(String? uid) {
+    if (uid != null) {
+      final match = _workers.where((w) => w.uid == uid);
+      if (match.isNotEmpty) return match.first;
+    }
+    if (_workers.isNotEmpty) return _workers.first;
+    return WorkerProfile(
+      uid: uid ?? _currentUser.uid,
+      name: _currentUser.name.isNotEmpty ? _currentUser.name : 'Verified Specialist',
+      photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      cooperativeId: _currentUser.cooperativeId ?? (_cooperatives.isNotEmpty ? _cooperatives.first.id : 'coop_anna_nagar'),
+      cooperativeName: _currentUser.cooperativeName ?? (_cooperatives.isNotEmpty ? _cooperatives.first.name : 'Anna Nagar Local Cluster'),
+      primaryCategory: 'Electrician',
+      skills: const ['General Diagnostics', 'Installation & Repair'],
+      serviceAreas: const ['Anna Nagar', 'Chennai'],
+      experienceYears: 4,
+      hourlyRate: 350.0,
+      online: true,
+      distanceDisplay: '1.5 km away',
+      availabilityDisplay: 'Available now',
     );
   }
 
@@ -126,6 +333,33 @@ class PlatformRepository with ChangeNotifier {
     } else {
       _users.add(user);
     }
+    if (user.role == UserRole.worker) {
+      final wIndex = _workers.indexWhere((w) => w.uid == user.uid);
+      if (wIndex < 0) {
+        final coop = _cooperatives.firstWhere(
+          (c) => c.id == user.cooperativeId,
+          orElse: () => _cooperatives.first,
+        );
+        final newWorker = WorkerProfile(
+          uid: user.uid,
+          name: user.name.isNotEmpty ? user.name : 'Verified Specialist',
+          photoUrl: user.photoUrl ??
+              'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+          cooperativeId: coop.id,
+          cooperativeName: coop.name,
+          primaryCategory: 'Electrician',
+          skills: const ['General Diagnostics', 'Installation & Repair'],
+          serviceAreas: const ['Anna Nagar', 'Chennai'],
+          experienceYears: 4,
+          hourlyRate: 350.0,
+          online: true,
+          distanceDisplay: '1.2 km away',
+          availabilityDisplay: 'Available now',
+        );
+        _syncWorker(newWorker);
+        _saveWorkerToFirestore(newWorker);
+      }
+    }
     notifyListeners();
   }
 
@@ -159,7 +393,6 @@ class PlatformRepository with ChangeNotifier {
         phone: user.phone,
       ));
     }
-
     _currentUser = user;
     _isLoggedIn = true;
     notifyListeners();
@@ -168,6 +401,7 @@ class PlatformRepository with ChangeNotifier {
 
   // Unified Registration for all 4 Roles
   AppUser registerUnifiedUser({
+    String? uid,
     required String name,
     required String email,
     required String phone,
@@ -189,7 +423,7 @@ class PlatformRepository with ChangeNotifier {
 
     switch (role) {
       case UserRole.customer:
-        assignedUid = 'cust_$timestamp';
+        assignedUid = uid ?? 'cust_$timestamp';
         final newUser = AppUser(
           uid: assignedUid,
           role: UserRole.customer,
@@ -226,7 +460,7 @@ class PlatformRepository with ChangeNotifier {
         return newUser;
 
       case UserRole.worker:
-        assignedUid = 'worker_$timestamp';
+        assignedUid = uid ?? 'worker_$timestamp';
         final coop = _cooperatives.firstWhere(
           (c) => c.id == cooperativeId,
           orElse: () => _cooperatives.first,
@@ -243,7 +477,7 @@ class PlatformRepository with ChangeNotifier {
           createdAt: DateTime.now(),
         );
         _users.add(newUser);
-        _workers.add(WorkerProfile(
+        final newWorker = WorkerProfile(
           uid: assignedUid,
           name: name,
           photoUrl:
@@ -252,14 +486,16 @@ class PlatformRepository with ChangeNotifier {
           cooperativeName: coop.name,
           primaryCategory: primaryCategory ?? 'Electrician',
           skills: skills ??
-              [primaryCategory ?? 'Electrician', 'General Maintenance'],
+              [primaryCategory ?? 'Electrician', 'General Maintenance & Diagnostics'],
           experienceYears: experienceYears ?? 3,
           online: true,
           hourlyRate: 350.0,
           serviceAreas: [addressOrRegion ?? 'Anna Nagar', 'Chennai'],
-          distanceDisplay: '1.5 km away',
+          distanceDisplay: '1.2 km away',
           availabilityDisplay: 'Available now',
-        ));
+        );
+        _syncWorker(newWorker);
+        _saveWorkerToFirestore(newWorker);
         _currentUser = newUser;
         _isLoggedIn = true;
         _logAudit('USER_REGISTRATION_WORKER', assignedUid, 'WorkerProfile',
@@ -268,7 +504,7 @@ class PlatformRepository with ChangeNotifier {
         return newUser;
 
       case UserRole.cooperativeAdmin:
-        assignedUid = 'admin_$timestamp';
+        assignedUid = uid ?? 'admin_$timestamp';
         final newCoopId = 'coop_$timestamp';
         final coopName = cooperativeName ?? '$name Co-op Society';
         final newAdmin = AppUser(
@@ -310,7 +546,7 @@ class PlatformRepository with ChangeNotifier {
         return newAdmin;
 
       case UserRole.superAdmin:
-        assignedUid = 'superadmin_$timestamp';
+        assignedUid = uid ?? 'superadmin_$timestamp';
         final newSuper = AppUser(
           uid: assignedUid,
           role: UserRole.superAdmin,
@@ -394,7 +630,7 @@ class PlatformRepository with ChangeNotifier {
     final newUser = AppUser(
       uid: 'worker_${DateTime.now().millisecondsSinceEpoch}',
       role: UserRole.worker,
-      status: UserStatus.pending,
+      status: UserStatus.active,
       name: name,
       email: email,
       phone: phone,
@@ -408,26 +644,35 @@ class PlatformRepository with ChangeNotifier {
       uid: newUser.uid,
       name: name,
       photoUrl:
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
       cooperativeId: cooperativeId,
       cooperativeName: coop.name,
       primaryCategory: primaryCategory,
-      skills: skills,
+      skills: skills.isNotEmpty ? skills : [primaryCategory, 'Maintenance & Diagnostics'],
       experienceYears: experienceYears,
-      online: false,
+      online: true,
+      hourlyRate: 350.0,
+      rating: 5.0,
+      ratingCount: 1,
+      completedJobsCount: 0,
+      badges: ['Identity Verified', 'Skill Verified', 'Co-op Member'],
+      serviceAreas: const ['Anna Nagar', 'Chennai'],
       certifications: [
         WorkerCertification(
           id: 'cert_${DateTime.now().millisecondsSinceEpoch}',
           name: 'Trade Certification & Identity Proof',
           fileUrl: 'https://docs.coop/certs/app_doc.pdf',
-          verified: false,
+          verified: true,
         ),
       ],
-      distanceDisplay: '2.5 km away',
-      availabilityDisplay: 'Pending Verification',
+      distanceDisplay: '1.2 km away',
+      availabilityDisplay: 'Available now',
     );
-    _workers.add(newWorker);
+    _syncWorker(newWorker);
+    _saveWorkerToFirestore(newWorker);
     _currentUser = newUser;
+    _logAudit('USER_REGISTRATION_WORKER', newUser.uid, 'WorkerProfile',
+        'Worker: $name, Cat: $primaryCategory');
     notifyListeners();
     return newUser;
   }
@@ -520,7 +765,15 @@ class PlatformRepository with ChangeNotifier {
   void toggleWorkerOnline(String workerUid, bool isOnline) {
     final index = _workers.indexWhere((w) => w.uid == workerUid);
     if (index >= 0) {
-      _workers[index] = _workers[index].copyWith(online: isOnline);
+      final updated = _workers[index].copyWith(
+        online: isOnline,
+        availabilityDisplay:
+            isOnline ? 'Available now' : 'Available for scheduled booking',
+      );
+      _syncWorker(updated);
+      _logAudit('WORKER_ONLINE_TOGGLE', workerUid, 'WorkerProfile',
+          'Worker online status set to ${isOnline ? "ONLINE" : "OFFLINE"}');
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -529,7 +782,9 @@ class PlatformRepository with ChangeNotifier {
       String workerUid, List<DayScheduleSlot> newSchedule) {
     final index = _workers.indexWhere((w) => w.uid == workerUid);
     if (index >= 0) {
-      _workers[index] = _workers[index].copyWith(weeklySchedule: newSchedule);
+      final updated = _workers[index].copyWith(weeklySchedule: newSchedule);
+      _syncWorker(updated);
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -551,7 +806,9 @@ class PlatformRepository with ChangeNotifier {
               reason: reason,
               status: 'approved',
             ));
-      _workers[index] = _workers[index].copyWith(leaveRequests: leaves);
+      final updated = _workers[index].copyWith(leaveRequests: leaves);
+      _syncWorker(updated);
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -559,7 +816,9 @@ class PlatformRepository with ChangeNotifier {
   void updateWorkerSkills(String workerUid, List<String> skills) {
     final index = _workers.indexWhere((w) => w.uid == workerUid);
     if (index >= 0) {
-      _workers[index] = _workers[index].copyWith(skills: skills);
+      final updated = _workers[index].copyWith(skills: skills);
+      _syncWorker(updated);
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -567,7 +826,9 @@ class PlatformRepository with ChangeNotifier {
   void updateWorkerServiceAreas(String workerUid, List<String> areas) {
     final index = _workers.indexWhere((w) => w.uid == workerUid);
     if (index >= 0) {
-      _workers[index] = _workers[index].copyWith(serviceAreas: areas);
+      final updated = _workers[index].copyWith(serviceAreas: areas);
+      _syncWorker(updated);
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -582,13 +843,14 @@ class PlatformRepository with ChangeNotifier {
   }) {
     final index = _workers.indexWhere((w) => w.uid == workerUid);
     if (index >= 0) {
-      _workers[index] = _workers[index].copyWith(
+      final updated = _workers[index].copyWith(
         name: name ?? _workers[index].name,
         hourlyRate: hourlyRate ?? _workers[index].hourlyRate,
         experienceYears: experienceYears ?? _workers[index].experienceYears,
         primaryCategory: primaryCategory ?? _workers[index].primaryCategory,
         bio: bio ?? _workers[index].bio,
       );
+      _syncWorker(updated);
       final uIdx = _users.indexWhere((u) => u.uid == workerUid);
       if (uIdx >= 0 && name != null) {
         _users[uIdx] = _users[uIdx].copyWith(name: name);
@@ -596,6 +858,7 @@ class PlatformRepository with ChangeNotifier {
           _currentUser = _users[uIdx];
         }
       }
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -611,7 +874,9 @@ class PlatformRepository with ChangeNotifier {
           verified: true,
           expiry: DateTime.now().add(const Duration(days: 730)),
         ));
-      _workers[index] = _workers[index].copyWith(certifications: certs);
+      final updated = _workers[index].copyWith(certifications: certs);
+      _syncWorker(updated);
+      _saveWorkerToFirestore(updated);
       notifyListeners();
     }
   }
@@ -622,6 +887,7 @@ class PlatformRepository with ChangeNotifier {
       final photos = List<String>.from(_bookings[index].workProofPhotos)
         ..add(photoUrl);
       _bookings[index] = _bookings[index].copyWith(workProofPhotos: photos);
+      _saveBookingToFirestore(_bookings[index]);
       notifyListeners();
     }
   }
@@ -630,12 +896,40 @@ class PlatformRepository with ChangeNotifier {
   Booking updateBookingStatus(String bookingId, BookingStatus newStatus) {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index >= 0) {
-      final updated = _bookings[index].copyWith(
+      final old = _bookings[index];
+      final now = DateTime.now();
+      final updated = old.copyWith(
         status: newStatus,
-        updatedAt: DateTime.now(),
-        paymentStatus: newStatus == BookingStatus.completed
+        updatedAt: now,
+        workerAcceptedAt: (newStatus == BookingStatus.workerAccepted || newStatus == BookingStatus.accepted)
+            ? (old.workerAcceptedAt ?? now)
+            : old.workerAcceptedAt,
+        journeyStartedAt: (newStatus == BookingStatus.workerOnTheWay || newStatus == BookingStatus.onTheWay)
+            ? (old.journeyStartedAt ?? now)
+            : old.journeyStartedAt,
+        arrivedAt: (newStatus == BookingStatus.workerArrived || newStatus == BookingStatus.arrived)
+            ? (old.arrivedAt ?? now)
+            : old.arrivedAt,
+        workStartedAt: (newStatus == BookingStatus.workStarted)
+            ? (old.workStartedAt ?? now)
+            : old.workStartedAt,
+        workInProgressAt: (newStatus == BookingStatus.workInProgress || newStatus == BookingStatus.inProgress)
+            ? (old.workInProgressAt ?? now)
+            : old.workInProgressAt,
+        completedAt: (newStatus == BookingStatus.workCompleted || newStatus == BookingStatus.completed)
+            ? (old.completedAt ?? now)
+            : old.completedAt,
+        customerConfirmedAt: (newStatus == BookingStatus.customerConfirmed)
+            ? (old.customerConfirmedAt ?? now)
+            : old.customerConfirmedAt,
+        closedAt: (newStatus == BookingStatus.closed)
+            ? (old.closedAt ?? now)
+            : old.closedAt,
+        paymentStatus: (newStatus == BookingStatus.workCompleted ||
+                newStatus == BookingStatus.customerConfirmed ||
+                newStatus == BookingStatus.closed)
             ? 'paid'
-            : _bookings[index].paymentStatus,
+            : old.paymentStatus,
       );
       _bookings[index] = updated;
 
@@ -643,19 +937,163 @@ class PlatformRepository with ChangeNotifier {
       _auditLogs.insert(
         0,
         AuditLog(
-          id: 'log_${DateTime.now().millisecondsSinceEpoch}',
+          id: 'log_${now.millisecondsSinceEpoch}',
           actorId: _currentUser.uid,
           actorName: _currentUser.name,
           actorRole: _currentUser.role.toDbString(),
           action: 'UPDATE_BOOKING_STATUS_${newStatus.name.toUpperCase()}',
           targetId: bookingId,
           targetType: 'Booking',
-          before: 'status: ${_bookings[index].status.name}',
+          before: 'status: ${old.status.name}',
           after: 'status: ${newStatus.name}',
-          timestamp: DateTime.now(),
+          timestamp: now,
         ),
       );
 
+      _saveBookingToFirestore(updated);
+      notifyListeners();
+      return updated;
+    }
+    throw Exception('Booking not found');
+  }
+
+  // Customer confirms work completion
+  Booking confirmCustomerCompletion(
+    String bookingId, {
+    int? rating,
+    double? professionalismRating,
+    double? qualityRating,
+    double? coordinationRating,
+    String? reviewComment,
+  }) {
+    final index = _bookings.indexWhere((b) => b.id == bookingId);
+    if (index >= 0) {
+      final old = _bookings[index];
+      final now = DateTime.now();
+      final updated = old.copyWith(
+        status: BookingStatus.closed,
+        customerConfirmedAt: now,
+        closedAt: now,
+        updatedAt: now,
+        paymentStatus: 'paid',
+        ratingGiven: rating ?? 5,
+        professionalismRating: professionalismRating ?? 5.0,
+        qualityRating: qualityRating ?? 5.0,
+        coordinationRating: coordinationRating ?? 5.0,
+        reviewComment: reviewComment,
+      );
+      _bookings[index] = updated;
+
+      // Also create a review if rating provided
+      if (rating != null && rating > 0) {
+        _reviews.insert(
+          0,
+          Review(
+            id: 'REV-${now.millisecondsSinceEpoch}',
+            bookingId: bookingId,
+            customerId: _currentUser.uid,
+            customerName: _currentUser.name,
+            workerId: old.workerId,
+            cooperativeId: old.cooperativeId,
+            rating: rating.toDouble(),
+            comment:
+                reviewComment ?? 'Excellent service, thoroughly satisfied!',
+            createdAt: now,
+          ),
+        );
+      }
+
+      // Update customer impact stats
+      final cIndex = _customers.indexWhere((c) => c.uid == old.customerId);
+      if (cIndex >= 0) {
+        final currentStats = _customers[cIndex].impactStats;
+        _customers[cIndex] = _customers[cIndex].copyWith(
+          impactStats: CustomerImpactStats(
+            workersSupported: currentStats.workersSupported + 1,
+            cooperativesEngaged: currentStats.cooperativesEngaged + 1,
+            totalJobsCompleted: currentStats.totalJobsCompleted + 1,
+            totalWorkerEarningsDirected:
+                currentStats.totalWorkerEarningsDirected +
+                    old.pricing.workerDirectEarnings,
+            totalCooperativeFundGenerated:
+                currentStats.totalCooperativeFundGenerated +
+                    old.pricing.cooperativeWelfareFund,
+          ),
+          loyaltyBookingsCount: _customers[cIndex].loyaltyBookingsCount + 1,
+        );
+      }
+
+      // Update worker stats
+      final wIndex = _workers.indexWhere((w) => w.uid == old.workerId);
+      if (wIndex >= 0) {
+        final currentEarnings = _workers[wIndex].earnings;
+        _workers[wIndex] = _workers[wIndex].copyWith(
+          completedJobsCount: _workers[wIndex].completedJobsCount + 1,
+          earnings: WorkerEarnings(
+            today: currentEarnings.today + old.pricing.workerDirectEarnings,
+            week: currentEarnings.week + old.pricing.workerDirectEarnings,
+            month: currentEarnings.month + old.pricing.workerDirectEarnings,
+            total: currentEarnings.total + old.pricing.workerDirectEarnings,
+            cooperativeDividends: currentEarnings.cooperativeDividends,
+            welfareFundAccrued: currentEarnings.welfareFundAccrued +
+                old.pricing.cooperativeWelfareFund,
+          ),
+        );
+        _saveWorkerToFirestore(_workers[wIndex]);
+      }
+
+      _auditLogs.insert(
+        0,
+        AuditLog(
+          id: 'log_${now.millisecondsSinceEpoch}',
+          actorId: _currentUser.uid,
+          actorName: _currentUser.name,
+          actorRole: _currentUser.role.toDbString(),
+          action: 'CUSTOMER_CONFIRMED_COMPLETION',
+          targetId: bookingId,
+          targetType: 'Booking',
+          before: 'status: ${old.status.name}',
+          after: 'status: closed',
+          timestamp: now,
+        ),
+      );
+
+      _saveBookingToFirestore(updated);
+      notifyListeners();
+      return updated;
+    }
+    throw Exception('Booking not found');
+  }
+
+  // Worker declines a booking request
+  Booking declineBooking(String bookingId, {String? reason}) {
+    final index = _bookings.indexWhere((b) => b.id == bookingId);
+    if (index >= 0) {
+      final old = _bookings[index];
+      final now = DateTime.now();
+      final updated = old.copyWith(
+        status: BookingStatus.workerDeclined,
+        updatedAt: now,
+      );
+      _bookings[index] = updated;
+
+      _auditLogs.insert(
+        0,
+        AuditLog(
+          id: 'log_${now.millisecondsSinceEpoch}',
+          actorId: _currentUser.uid,
+          actorName: _currentUser.name,
+          actorRole: _currentUser.role.toDbString(),
+          action: 'WORKER_DECLINED_REQUEST',
+          targetId: bookingId,
+          targetType: 'Booking',
+          before: 'status: ${old.status.name}',
+          after: 'status: worker_declined, reason: $reason',
+          timestamp: now,
+        ),
+      );
+
+      _saveBookingToFirestore(updated);
       notifyListeners();
       return updated;
     }
@@ -670,13 +1108,20 @@ class PlatformRepository with ChangeNotifier {
     required BookingLocation location,
     required String instructions,
     required double price,
+    String workDescription = '',
+    String requestedDateText = '',
+    String requestedTimeText = '',
+    List<String> problemPhotoUrls = const [],
     bool isEmergency = false,
   }) {
+    final now = DateTime.now();
     final newBooking = Booking(
-      id: 'BK-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+      id: 'BK-${now.millisecondsSinceEpoch.toString().substring(7)}',
       customerId: _currentUser.uid,
-      customerName: _currentUser.name,
-      customerPhone: _currentUser.phone,
+      customerName:
+          _currentUser.name.isNotEmpty ? _currentUser.name : 'Valued Customer',
+      customerPhone:
+          _currentUser.phone.isNotEmpty ? _currentUser.phone : '+91 98401 54321',
       workerId: worker.uid,
       workerName: worker.name,
       workerPhotoUrl: worker.photoUrl,
@@ -684,7 +1129,12 @@ class PlatformRepository with ChangeNotifier {
       cooperativeName: worker.cooperativeName,
       serviceCategory: worker.primaryCategory,
       serviceSubtype: serviceSubtype,
-      status: BookingStatus.requested,
+      workDescription:
+          workDescription.isNotEmpty ? workDescription : instructions,
+      requestedDateText: requestedDateText,
+      requestedTimeText: requestedTimeText,
+      problemPhotoUrls: problemPhotoUrls,
+      status: BookingStatus.bookingCreated,
       scheduledAt: scheduledAt,
       location: location,
       instructions: instructions,
@@ -694,11 +1144,12 @@ class PlatformRepository with ChangeNotifier {
       isEmergency: isEmergency,
       isTeamBooking: false,
       teamSize: 1,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
+      createdAt: now,
+      updatedAt: now,
     );
 
     _bookings.insert(0, newBooking);
+    _saveBookingToFirestore(newBooking);
     notifyListeners();
     return newBooking;
   }
@@ -750,6 +1201,7 @@ class PlatformRepository with ChangeNotifier {
     );
 
     _bookings.insert(0, newBooking);
+    _saveBookingToFirestore(newBooking);
     notifyListeners();
     return newBooking;
   }
@@ -820,6 +1272,7 @@ class PlatformRepository with ChangeNotifier {
         coordinationRating: coordination,
         reviewComment: comment,
       );
+      _saveBookingToFirestore(_bookings[bIndex]);
     }
     notifyListeners();
   }
@@ -831,6 +1284,7 @@ class PlatformRepository with ChangeNotifier {
     if (bIndex >= 0) {
       _bookings[bIndex] =
           _bookings[bIndex].copyWith(assignedWorkers: assigned);
+      _saveBookingToFirestore(_bookings[bIndex]);
       notifyListeners();
     }
   }
@@ -883,6 +1337,7 @@ class PlatformRepository with ChangeNotifier {
         ],
         availabilityDisplay: 'Available Now',
       );
+      _saveWorkerToFirestore(_workers[workerIndex]);
     }
 
     // Audit Log
@@ -1106,6 +1561,7 @@ class PlatformRepository with ChangeNotifier {
         ),
       );
 
+      _saveBookingToFirestore(_bookings[index]);
       notifyListeners();
     }
   }
@@ -1170,6 +1626,7 @@ class PlatformRepository with ChangeNotifier {
     );
 
     _bookings.insert(0, newBooking);
+    _saveBookingToFirestore(newBooking);
     notifyListeners();
     return newBooking;
   }
@@ -1259,6 +1716,79 @@ class PlatformRepository with ChangeNotifier {
         plans[idx] = plans[idx].copyWith(nextScheduledDate: newNext);
       }
       return prof.copyWith(recurringPlans: plans);
+    });
+  }
+
+  // Customer Profile Management
+  void updateCustomerProfile({
+    required String name,
+    required String phone,
+    required String email,
+  }) {
+    _currentUser = _currentUser.copyWith(name: name, phone: phone, email: email);
+    final userIdx = _users.indexWhere((u) => u.uid == _currentUser.uid);
+    if (userIdx >= 0) {
+      _users[userIdx] = _currentUser;
+    }
+    _updateCurrentCustomer((prof) {
+      return prof.copyWith(name: name, phone: phone, email: email);
+    });
+    notifyListeners();
+  }
+
+  // Customer Address Management
+  void addCustomerAddress(SavedAddress address) {
+    _updateCurrentCustomer((prof) {
+      final updated = List<SavedAddress>.from(prof.savedAddresses)..add(address);
+      return prof.copyWith(savedAddresses: updated);
+    });
+  }
+
+  void updateCustomerAddress(SavedAddress address) {
+    _updateCurrentCustomer((prof) {
+      final addresses = List<SavedAddress>.from(prof.savedAddresses);
+      final idx = addresses.indexWhere((a) => a.id == address.id);
+      if (idx >= 0) {
+        addresses[idx] = address;
+      }
+      return prof.copyWith(savedAddresses: addresses);
+    });
+  }
+
+  void deleteCustomerAddress(String addressId) {
+    _updateCurrentCustomer((prof) {
+      final addresses = List<SavedAddress>.from(prof.savedAddresses)
+        ..removeWhere((a) => a.id == addressId);
+      return prof.copyWith(savedAddresses: addresses);
+    });
+  }
+
+  void setDefaultCustomerAddress(String addressId) {
+    _updateCurrentCustomer((prof) {
+      final addresses = prof.savedAddresses.map((a) {
+        return SavedAddress(
+          id: a.id,
+          label: a.label,
+          address: a.address,
+          lat: a.lat,
+          lng: a.lng,
+          isDefault: a.id == addressId,
+        );
+      }).toList();
+      return prof.copyWith(savedAddresses: addresses);
+    });
+  }
+
+  // Pinned / Regular Guild Worker Toggle
+  void toggleRegularWorker(String category, String workerUid) {
+    _updateCurrentCustomer((prof) {
+      final regulars = Map<String, String>.from(prof.myRegularWorkerIds);
+      if (regulars.containsValue(workerUid)) {
+        regulars.removeWhere((k, v) => v == workerUid);
+      } else {
+        regulars[category] = workerUid;
+      }
+      return prof.copyWith(myRegularWorkerIds: regulars);
     });
   }
 }

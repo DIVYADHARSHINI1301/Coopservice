@@ -406,44 +406,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // Demo Persona Quick-Switch
-                        const Text(
-                          'Test Persona Quick Fill:',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.darkEmerald,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              _personaChip(
-                                label: 'Customer',
-                                email: 'divya@customer.coop',
-                              ),
-                              const SizedBox(width: 6),
-                              _personaChip(
-                                label: 'Worker',
-                                email: 'ravi@worker.coop',
-                              ),
-                              const SizedBox(width: 6),
-                              _personaChip(
-                                label: 'Co-op Admin',
-                                email: 'admin@coop.org',
-                              ),
-                              const SizedBox(width: 6),
-                              _personaChip(
-                                label: 'Super Admin',
-                                email: 'superadmin@coop.org',
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -482,33 +444,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _personaChip({required String label, required String email}) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        _emailPhoneController.text = email;
-        _passwordController.text = 'password123';
-        _handleLogin();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.frostedMint,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.celadon),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: AppColors.darkEmerald,
           ),
         ),
       ),

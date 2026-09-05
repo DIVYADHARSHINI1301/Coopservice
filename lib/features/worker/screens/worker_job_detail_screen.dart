@@ -6,6 +6,7 @@ import '../../../shared/models/booking_model.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/fair_split_pricing_card.dart';
 import '../../../shared/widgets/interactive_map_widget.dart';
+import '../../../shared/widgets/status_badge.dart';
 
 class WorkerJobDetailScreen extends ConsumerStatefulWidget {
   final Booking booking;
@@ -22,25 +23,32 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
 
   void _advanceState(Booking currentBooking) async {
     final repo = ref.read(platformRepositoryProvider);
-    BookingStatus nextStatus;
+    BookingStatus? nextStatus;
 
     switch (currentBooking.status) {
-      case BookingStatus.requested:
-        nextStatus = BookingStatus.accepted;
+      case BookingStatus.bookingCreated:
+      case BookingStatus.workerSearching:
+        nextStatus = BookingStatus.workerAccepted;
         break;
-      case BookingStatus.accepted:
-        nextStatus = BookingStatus.onTheWay;
+      case BookingStatus.workerAccepted:
+        nextStatus = BookingStatus.workerOnTheWay;
         break;
-      case BookingStatus.onTheWay:
-        nextStatus = BookingStatus.arrived;
+      case BookingStatus.workerOnTheWay:
+        nextStatus = BookingStatus.workerArrived;
         break;
-      case BookingStatus.arrived:
-        nextStatus = BookingStatus.inProgress;
+      case BookingStatus.workerArrived:
+        nextStatus = BookingStatus.workStarted;
         break;
-      case BookingStatus.inProgress:
-        nextStatus = BookingStatus.completed;
+      case BookingStatus.workStarted:
+        nextStatus = BookingStatus.workInProgress;
         break;
-      case BookingStatus.completed:
+      case BookingStatus.workInProgress:
+        nextStatus = BookingStatus.workCompleted;
+        break;
+      case BookingStatus.workCompleted:
+      case BookingStatus.customerConfirmed:
+      case BookingStatus.closed:
+      case BookingStatus.workerDeclined:
       case BookingStatus.cancelled:
         return;
     }
@@ -52,10 +60,11 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (nextStatus == BookingStatus.completed) {
+    if (nextStatus == BookingStatus.workCompleted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Job marked completed! Payout queued to your co-op wallet.'),
+          content: Text(
+              'Work marked completed! Awaiting customer inspection and sign-off.'),
           backgroundColor: AppColors.seaGreen,
         ),
       );
@@ -66,6 +75,7 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('Upload Work-Proof Photo'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -132,6 +142,13 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
       orElse: () => widget.booking,
     );
 
+    final isClosedOrConfirmed =
+        currentBooking.status == BookingStatus.customerConfirmed ||
+            currentBooking.status == BookingStatus.closed;
+    final isAwaitingCustomer =
+        currentBooking.status == BookingStatus.workCompleted ||
+            currentBooking.status == BookingStatus.completed;
+
     return Scaffold(
       backgroundColor: const Color(0xFFE7FFF3),
       appBar: AppBar(
@@ -141,40 +158,62 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ),
-      bottomNavigationBar: currentBooking.status == BookingStatus.completed
+      bottomNavigationBar: isClosedOrConfirmed
           ? Container(
               padding: const EdgeInsets.all(16),
               color: AppColors.white,
               child: const Text(
-                '✅ Job Completed & Fair Payout Settled',
+                '✅ Job Confirmed by Customer & Payout Settled',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: AppColors.seaGreen,
                 ),
               ),
             )
-          : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.evergreen.withOpacity(0.08),
-                    blurRadius: 16,
-                    offset: const Offset(0, -4),
+          : isAwaitingCustomer
+              ? Container(
+                  padding: const EdgeInsets.all(16),
+                  color: AppColors.white,
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.hourglass_top,
+                          color: AppColors.seaGreen, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Awaiting Customer Inspection & Confirmation',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.darkEmerald,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: SafeArea(
-                child: CustomButton(
-                  text: currentBooking.status.nextWorkerActionLabel,
-                  isLoading: _isLoading,
-                  onPressed: () => _advanceState(currentBooking),
+                )
+              : Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.evergreen.withOpacity(0.08),
+                        blurRadius: 16,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: CustomButton(
+                      text: currentBooking.status.nextWorkerActionLabel,
+                      isLoading: _isLoading,
+                      onPressed: () => _advanceState(currentBooking),
+                    ),
+                  ),
                 ),
-              ),
-            ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -183,7 +222,9 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
             // Map Directions
             InteractiveMapWidget(
               height: 180,
-              showLiveRoute: currentBooking.status == BookingStatus.onTheWay,
+              showLiveRoute:
+                  currentBooking.status == BookingStatus.workerOnTheWay ||
+                      currentBooking.status == BookingStatus.onTheWay,
             ),
             const SizedBox(height: 16),
 
@@ -209,21 +250,11 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
                           color: AppColors.darkEmerald,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.frostedMint,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          currentBooking.status.label,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.seaGreen,
-                          ),
-                        ),
+                      StatusBadge(
+                        label: currentBooking.status.label,
+                        status: isClosedOrConfirmed
+                            ? BadgeStatus.completed
+                            : BadgeStatus.onTheWay,
                       ),
                     ],
                   ),
@@ -236,6 +267,35 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  if (currentBooking.workDescription.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: AppColors.celadon.withOpacity(0.6)),
+                      ),
+                      child: Text(
+                        'Work Description: ${currentBooking.workDescription}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (currentBooking.requestedDateText.isNotEmpty ||
+                      currentBooking.requestedTimeText.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _infoRow(
+                      Icons.schedule,
+                      'Appointment Schedule',
+                      '${currentBooking.requestedDateText} • ${currentBooking.requestedTimeText}',
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   const Divider(color: AppColors.celadon),
                   const SizedBox(height: 8),
@@ -247,9 +307,39 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
                   const SizedBox(height: 6),
                   _infoRow(Icons.location_on, 'Service Address',
                       currentBooking.location.address),
-                  const SizedBox(height: 6),
-                  _infoRow(Icons.notes, 'Instructions',
-                      currentBooking.instructions),
+                  if (currentBooking.instructions.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    _infoRow(Icons.notes, 'Instructions',
+                        currentBooking.instructions),
+                  ],
+                  if (currentBooking.problemPhotoUrls.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Customer Problem Photos:',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: currentBooking.problemPhotoUrls
+                          .map((url) => Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.celadon),
+                                  image: DecorationImage(
+                                    image: NetworkImage(url),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -320,6 +410,7 @@ class _WorkerJobDetailScreenState extends ConsumerState<WorkerJobDetailScreen> {
 
             // Transparent Earnings Split
             FairSplitPricingCard(pricing: currentBooking.pricing),
+            const SizedBox(height: 24),
           ],
         ),
       ),

@@ -117,10 +117,8 @@ class StatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (defaultIcon != null) ...[
-            Icon(defaultIcon, size: fontSize + 3, color: fg),
-            const SizedBox(width: 4),
-          ],
+          Icon(defaultIcon, size: fontSize + 3, color: fg),
+          const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(

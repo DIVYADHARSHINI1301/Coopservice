@@ -187,7 +187,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.workerProfile,
         builder: (context, state) {
           final worker = state.extra as WorkerProfile? ??
-              ref.read(platformRepositoryProvider).allWorkers.first;
+              ref.read(platformRepositoryProvider).getSafeWorkerById(null);
           return WorkerProfileScreen(worker: worker);
         },
       ),
@@ -204,7 +204,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           final worker = extra['worker'] as WorkerProfile? ??
-              ref.read(platformRepositoryProvider).allWorkers.first;
+              ref.read(platformRepositoryProvider).getSafeWorkerById(null);
           final isEmergency = extra['isEmergency'] as bool? ?? false;
           return BookingFlowScreen(
               worker: worker, isEmergency: isEmergency);

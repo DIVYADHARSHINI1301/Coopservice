@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/localization/app_localization.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/services/firebase_auth_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_typography.dart';
 import '../../../shared/data/repository.dart';
 import '../../../shared/models/worker_model.dart';
 import '../../../shared/widgets/status_badge.dart';
@@ -28,10 +26,7 @@ class _WorkerSelfProfileScreenState
   Widget build(BuildContext context) {
     final repo = ref.watch(platformRepositoryProvider);
     final user = repo.currentUser;
-    final worker = repo.allWorkers.firstWhere(
-      (w) => w.uid == user.uid,
-      orElse: () => repo.allWorkers.first,
-    );
+    final worker = repo.getWorkerForUser(user);
     final coop = repo.allCooperatives.firstWhere(
       (c) => c.id == worker.cooperativeId,
       orElse: () => repo.allCooperatives.first,

@@ -12,10 +12,7 @@ class WorkerEarningsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(platformRepositoryProvider);
     final user = repo.currentUser;
-    final worker = repo.allWorkers.firstWhere(
-      (w) => w.uid == user.uid,
-      orElse: () => repo.allWorkers.first,
-    );
+    final worker = repo.getWorkerForUser(user);
 
     return Scaffold(
       backgroundColor: const Color(0xFFE7FFF3),
